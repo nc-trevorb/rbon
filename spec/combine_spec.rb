@@ -1,51 +1,87 @@
 require 'spec_helper'
 
 describe Combine do
-  let(:agg) { described_class }
+  let(:combine) { described_class.new }
 
-  describe "#merge_schemas" do
-    let(:json_a) {{ a: 1 }}
-    let(:json_b) {{ b: 'asdf' }}
+  describe "#two_schemas" do
+    context "for identical schemas" do
+      [
+        ['a', 'b'],
+        [1, 2],
+        [{ a: 1 }, { a: 2 }],
+        [[1], [2]],
+        [[{ a: 'asdf' }], [{ a: 'jkl' }]],
+      ].each do |a, b|
+        it "should return them" do
+          schema_a = Convert.json_to_schema(a)
+          schema_b = Convert.json_to_schema(b)
+          combined = combine.two_schemas(schema_a, schema_b)
 
-    let(:schema_a) { Convert.json_to_schema(json_a) }
-    let(:schema_b) { Convert.json_to_schema(json_b) }
-    let(:schema_c) { Convert.json_to_schema(json_c) }
-
-    let(:merged) { agg.merge_schemas(schema_a, schema_b, schema_c) }
-
-    context "with no conflicts" do
-      let(:json_c) do
-        {
-          a: 1,
-          b: nil,
-        }
-      end
-
-      it "should include keys from both schemas" do
-        expect(merged[:a]).to eq('number')
-      end
-
-      it "should combine types when one is null" do
-        expect(merged[:b]).to eq('string')
+          expect(combined).to eq(schema_a)
+          expect(combined).to eq(schema_b)
+        end
       end
     end
 
-    context "with conflicts" do
-      let(:json_c) do
-        {
-          a: 'no',
-          b: [],
-        }
+    context "for different types" do
+      it "should list the type as an array" do
+        schema_a = { type: 'number' }.indifferent
+        schema_b = { type: 'string' }.indifferent
+        combined = combine.two_schemas(schema_a, schema_b)
+
+        expect(combined[:type]).to include('number')
+        expect(combined[:type]).to include('string')
       end
 
-      it "should split type conflicts into two keys" do
-        expect(merged[:a]).to be(nil)
-        expect(merged[:b]).to be(nil)
+      context "when one type is already an array" do
+        it "should add the new type" do
+          schema_a = { type: ['number', 'boolean'] }.indifferent
+          schema_b = { type: 'string' }.indifferent
+          combined = combine.two_schemas(schema_a, schema_b)
 
-        expect(merged[:a_conflict_1]).to eq('number')
-        expect(merged[:a_conflict_2]).to eq('string')
-        expect(merged[:b_conflict_1]).to eq('string')
-        expect(merged[:b_conflict_2]).to eq([])
+          expect(combined[:type]).to include('number')
+          expect(combined[:type]).to include('string')
+          expect(combined[:type]).to include('boolean')
+        end
+      end
+    end
+
+    context "for different items" do
+      it "should allow the array to be heterogenous" do
+        schema_a = Convert.json_to_schema(['a'])
+        schema_b = Convert.json_to_schema([1])
+        combined = combine.two_schemas(schema_a, schema_b)
+        type = combined[:items][:type]
+
+        expect(combined[:type]).to eq('array')
+        expect(type).to include('string')
+        expect(type).to include('number')
+      end
+    end
+
+    context "for different properties" do
+      context "for compatible schemas" do
+        it "should merge the properties" do
+          schema_a = Convert.json_to_schema({ a: 1 })
+          schema_b = Convert.json_to_schema({ a: 2, b: 3 })
+          combined = combine.two_schemas(schema_a, schema_b)
+          properties = combined[:properties]
+
+          expect(combined).to eq(schema_b)
+        end
+      end
+
+      context "for conflicting schemas" do
+        it "should list nested types as arrays" do
+          schema_a = Convert.json_to_schema({ a: 1 })
+          schema_b = Convert.json_to_schema({ a: 'asdf' })
+          combined = combine.two_schemas(schema_a, schema_b)
+          nested_type = combined[:properties][:a][:type]
+
+          expect(combined[:type]).to eq('object')
+          expect(nested_type).to include('string')
+          expect(nested_type).to include('number')
+        end
       end
     end
   end

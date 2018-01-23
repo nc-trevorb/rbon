@@ -7,7 +7,6 @@ class Convert
         hash_with_integer_keys = JsonObject.matches?(h) && (h.keys.select {|k| k.to_i > 1}.count > 1)
 
         if hash_with_integer_keys
-          # FIXME conflict resolution strategy
           json[k] = { '<id>' => h.values.first }
         end
       end
@@ -15,24 +14,22 @@ class Convert
       json
     end
 
-    def json_to_swag(input_json, name)
-      json = get_json(input_json)
-      json_to_json_ruby(json).get_swagger_lines(key: name)
-    end
-
     def json_to_schema(input_json)
-      json = get_json(input_json)
-      json_ruby = json_to_json_ruby(json)
+      if input_json.is_a?(Hash)
+        json = get_json(input_json)
+        json_ruby = json_to_json_ruby(json)
 
-      json_ruby_to_json_schema(json_ruby)
+        json_ruby_to_json_schema(json_ruby)
+      else
+        JsonValue.new(input_json).to_json_schema
+      end
     end
 
-    def json_to_paths(input_json)
+    def json_to_paths(input_json, prefix: '')
       json = get_json(input_json)
       json_ruby = json_to_json_ruby(json)
-      json_schema = json_ruby_to_json_schema(json_ruby)
 
-      json_schema_to_json_paths(json_schema)
+      json_ruby_to_paths(json_ruby, prefix: prefix)
     end
 
     def json_to_csv(input_json)
@@ -47,102 +44,48 @@ class Convert
       raise "need to pass in hash" unless JsonObject.matches?(input_json)
       json = get_json(input_json)
 
-      JsonValue.build(json)
+      JsonValue.new(json)
     end
 
-    def json_ruby_to_json_schema(json_ruby, in_array: false)
+    def json_ruby_to_paths(json_ruby, prefix: '')
       raise "need to pass in JsonObject" unless json_ruby.type == JsonObject
-      schema = {}
+      paths = []
+
+      json_ruby.value.each do |key, json_value|
+        paths += json_value.paths(JsonType.prepend_path(prefix, key))
+      end
+
+      paths
+    end
+
+    def json_ruby_to_json_schema(json_ruby)
+      raise "need to pass in JsonObject" unless json_ruby.type == JsonObject
+      schema = { type: JsonObject.schema_type, properties: {} }
 
       json_ruby.value.each do |k, v|
-        schema[k] = if v.type == JsonObject
-                      json_ruby_to_json_schema(v)
-                    elsif v.type == JsonArray
-                      if v.value.any? { |v_| v_.type == JsonObject }
-                        schemas = v.value.map(&method(:json_ruby_to_json_schema))
+        schema[:properties][k] = if v.type == JsonObject
+                                   json_ruby_to_json_schema(v)
+                                 elsif v.type == JsonArray
+                                   schemas = if v.value.any? { |v_| v_.type == JsonObject }
+                                               v.value.map(&method(:json_ruby_to_json_schema))
+                                             else
+                                               v.value.map(&:to_json_schema)
+                                             end.uniq
 
-                        if schemas.uniq.length == 1
-                          schemas
-                        else
-                          Combine.merge_schemas(*schemas.uniq)
-                        end
-                      else
-                        v.value.map(&:schema_value).uniq.sort
-                      end
-                    else
-                      v.schema_value(in_array: in_array)
-                    end
+                                   items_value = if schemas.length == 1
+                                                   schemas.first
+                                                 else
+                                                   Combine.list_of_schemas(*schemas.uniq)
+                                                 end
+
+
+                                   { type: 'array', items: items_value }
+                                 else
+                                   v.to_json_schema
+                                 end
       end
 
-      schema.with_indifferent_access
-    end
-
-    def json_schema_to_json_paths(schema, prefix='')
-      schema.map do |key, type|
-        type_to_path(key, type, prefix)
-      end.flatten
-    end
-
-    def json_schema_to_json_ruby(json_schema)
-      json_ruby = {}
-
-      json_schema.each do |k, v|
-        json_ruby[k] = JsonValue.from_schema_value(v)
-      end
-
-      json_ruby.with_indifferent_access
-    end
-
-    def prepend_path(prefix, str)
-      if prefix == ''
-        str
-      else
-        "#{prefix}.#{str}"
-      end
-    end
-
-    def type_to_path(key, type, prefix)
-      if JsonObject.matches?(type)
-        json_schema_to_json_paths(type, prepend_path(prefix, key))
-      elsif type.is_a?(Array)
-        get_array_paths(key, type, prefix).flatten
-      else
-        if type.include?(':') && !type.include?('{')
-          type.split(',').map do |t|
-            prepend_path(prefix, "#{key}.#{t}")
-          end.join(',')
-        else
-          prepend_path(prefix, "#{key}:#{type}")
-        end
-      end
-    end
-
-    private
-
-    def get_array_paths(key, type, prefix)
-      if type.any?{|el| JsonObject.matches?(el) }
-        types = type.uniq.map.with_index do |el, i|
-          json_schema_to_json_paths(el).map do |path|
-            if path.count(':') > 1
-              raise 'there was a problem (might be parsing nested hashes?)'
-            else
-              prepend_path(prefix, "#{key}<#{i}>.#{path}")
-            end
-          end
-        end
-
-        if types.length == 1
-          if type.length == 1
-            types.flatten.map{|t| t.gsub('<0>', '<>')}
-          else
-            types.flatten.map{|t| t.gsub('<0>', '<all>')}
-          end
-        else
-          types
-        end
-      else
-        [prepend_path(prefix, "#{key}<>:#{type.join(',')}")]
-      end
+      schema.indifferent
     end
   end
 end

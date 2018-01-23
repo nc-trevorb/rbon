@@ -3,7 +3,8 @@ require 'spec_helper'
 describe Compare do
   let(:compare) { described_class }
 
-  describe "#diff_jsons" do
+  # pending until this class is actually used
+  xdescribe "#diff_jsons" do
     it "should list the same paths" do
       j1 = { a: 'asdf', b: 1 }
       j2 = { a: 'jkl',  b: 'asdf' }

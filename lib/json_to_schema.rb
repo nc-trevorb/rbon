@@ -1,9 +1,16 @@
 Dir[File.expand_path("./lib/**/*.rb")].each do |f|
-  puts f
   require f
 end
 
-require 'active_support/core_ext/hash/indifferent_access'
+# used for Hash#slice and HashWithIndifferentAccess
+require 'active_support'
+require 'active_support/core_ext'
+
+class Hash
+  def indifferent
+    with_indifferent_access
+  end
+end
 
 module JsonToSchema
   class << self

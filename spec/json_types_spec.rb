@@ -19,8 +19,8 @@ describe 'Json types' do
 
     context 'for collection types' do
       it 'should be an empty object' do
-        expect(JsonArray.get_schema_value(value: [])).to eq([])
-        expect(JsonObject.get_schema_value(value: {})).to eq({})
+        expect(JsonArray.default).to eq([])
+        expect(JsonObject.default).to eq({})
       end
     end
   end
@@ -31,7 +31,6 @@ describe 'Json types' do
         JsonNumber => 'number',
         JsonString => 'string',
         JsonBool => 'boolean',
-        JsonNull => '(null)', # FIXME figure out what this should really be
         JsonObject => 'object',
         JsonArray => 'array',
       }.each do |type, schema_type|
@@ -48,53 +47,41 @@ describe 'Json types' do
         JsonBool,
         JsonNull,
       ].each do |type|
-        expect(type.other_schema_fields).to be(nil)
+        expect(type.other_schema_fields).to eq({})
       end
     end
 
     it 'should recurse into items for JsonArrays' do
-      expect(JsonArray.other_schema_fields(value: [])).to eq({ items: {} })
-      expect(JsonArray.other_schema_fields(value: [1,2,3])).to eq({ items: { type: 'number' } })
-      expect(JsonArray.other_schema_fields(value: ['a','s','d','f'])).to eq({ items: { type: 'string' } })
+      [
+        [[],                { items: {} }],
+        [[1,2,3],           { items: { type: 'number' } }],
+        [['a','s','d','f'], { items: { type: 'string' } }],
+      ].each do |value, expected|
+        val = JsonValue.new(value).value
+        expect(JsonArray.other_schema_fields(value: val)).to eq(expected.indifferent)
+      end
     end
 
     it 'should recurse into items for JsonObjects' do
-      expect(JsonObject.other_schema_fields(value: {})).to eq({ properties: {} })
-      expect(JsonObject.other_schema_fields(value: { a: 1 })).to eq({ properties: { a: { type: 'number' }}})
-      expect(JsonObject.other_schema_fields(value: { a: 'bla' })).to eq({ properties: { a: { type: 'string' }}})
-      expect(JsonObject.other_schema_fields(value: { a: nil })).to eq({ properties: { a: {}}})
+      [
+        [{}, { properties: {} }],
+        [{ a: 1 }, { properties: { a: { type: 'number' }}}],
+        [{ a: 'bla' }, { properties: { a: { type: 'string' }}}],
+        # FIXME specs for nulls
+        # [{ a: nil }, { properties: { a: {}}}],
+      ].each do |value, expected|
+        val = JsonValue.new(value).value
+        expect(JsonObject.other_schema_fields(value: val)).to eq(expected.indifferent)
+      end
     end
   end
 
-
-  #   describe '#schema_value' do
-  #     it 'raises an error when the value is missing or not the correct type' do
-  #       expect { JsonObject.get_schema_value }.to raise_error(StandardError)
-  #       expect { JsonArray.get_schema_value }.to raise_error(StandardError)
-
-  #       expect { JsonObject.get_schema_value(value: nil) }.to raise_error(StandardError)
-  #       expect { JsonArray.get_schema_value(value: nil) }.to raise_error(StandardError)
-
-  #       expect { JsonObject.get_schema_value(value: false) }.to raise_error(StandardError)
-  #       expect { JsonArray.get_schema_value(value: false) }.to raise_error(StandardError)
-  #     end
-
-  #     it 'returns the schema for collections' do
-  #       expect(JsonArray.get_schema_value(value: [JsonValue.new(1)])).to eq(['number'])
-  #     end
-
-  #     xit 'should be based on the elements in the collection' do
-  #       expect(JsonArray.schema_value(raw_value: ['asdf'])).to eq('<>string')
-  #       expect(JsonArray.schema_value(raw_value: [1])).to eq('<>number')
-  #     end
-  #   end
-  # end
 
   describe '#get_swagger_lines' do
     context 'for a JsonObject' do
       def swagger_for_hash(h, opts={})
         depth = opts[:depth] || ''
-        json_object = JsonValue.build(h)
+        json_object = JsonValue.new(h)
 
         json_object.get_swagger_lines(key: 'Indentation', depth: depth)
       end

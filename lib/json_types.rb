@@ -11,7 +11,19 @@ class JsonType
     end
 
     def other_schema_fields(value: nil)
-      {}
+      {}.indifferent
+    end
+
+    def paths(prefix: '', value: nil)
+      ["#{prefix}:#{schema_type}"]
+    end
+
+    def prepend_path(prefix, str)
+      if prefix == ''
+        str
+      else
+        "#{prefix}/#{str}"
+      end
     end
   end
 end
@@ -20,10 +32,6 @@ class JsonBool < JsonType
   class << self
     def types
       [TrueClass, FalseClass]
-    end
-
-    def get_schema_value(value: nil, in_array: false)
-      'boolean'
     end
 
     def schema_type
@@ -50,12 +58,8 @@ class JsonNull < JsonType
       value.nil? || value == 'null'
     end
 
-    def get_schema_value(value: nil, in_array: false)
-      "(null)"
-    end
-
     def schema_type
-      "(null)"
+      ''
     end
 
     def default
@@ -80,10 +84,6 @@ class JsonNumber < JsonType
 
     def matches?(value)
       super || int_string?(value) || float_string?(value)
-    end
-
-    def get_schema_value(value: nil, in_array: false)
-      "number"
     end
 
     def schema_type
@@ -119,10 +119,6 @@ class JsonString < JsonType
       [String, Symbol]
     end
 
-    def get_schema_value(value: nil, in_array: false)
-      "string"
-    end
-
     def schema_type
       "string"
     end
@@ -155,33 +151,35 @@ class JsonArray < JsonType
       'array'
     end
 
-    def other_schema_fields(value: [])
-      items = {}
+    def other_schema_fields(value: nil)
+      item_types = value.map(&:to_json_schema).uniq
 
-      value.each do |v|
-# fixme lookup by schema_value
-      end
-
-      { items: items }
+      if item_types.length == 0
+        { items: {} }
+      elsif item_types.length == 1
+        { items: item_types.first }
+      else
+        if all_simple_schemas?(item_types)
+          { items: { type: item_types.map{|x| x[:type]}.sort }}
+        else
+          raise "complex conflict"
+        end
+      end.with_indifferent_access
     end
 
-    def get_schema_value(value:, in_array: false)
-      json_objects = value
-      element_types = json_objects.map(&:schema_value)
+    def all_simple_schemas?(schemas)
+      schemas.all? { |schema| schema.keys == ['type'] }
+    end
 
-      if element_types.any? { |et| JsonObject.matches?(et) }
-        raise "mix of objects and primitives" unless element_types.all? { |et| JsonObject.matches?(et) }
-        element_types.sort
-      else
-        element_types.uniq.sort
-      end
+    def paths(prefix: '', value: [])
+      value.map { |v| v.paths("#{prefix}[]") }.uniq.flatten
     end
 
     def get_swagger_lines(key, depth, value, references)
       items_type_swagger = if value.any?(&:collection?)
                              value.first.get_swagger_lines(key: '', depth: depth).lines.drop(1).map(&:chomp).map{|l| l.gsub(/^  /, '')}
                            else
-                             ["    type: #{value.map(&:schema_value).uniq.join(',')}"]
+                             ["    type: #{value.map(&:schema_type).uniq.join(',')}"]
                            end
 
       [
@@ -212,15 +210,19 @@ class JsonObject < JsonType
     end
 
     def other_schema_fields(value: {})
-      { properties: {} }
+      properties_types = {}
+
+      value.each do |k, v|
+        properties_types[k] = v.to_json_schema
+      end
+
+      { properties: properties_types }.with_indifferent_access
     end
 
-    def get_schema_value(value:, in_array: false)
-      if matches?(value)
-        Convert.json_to_json_ruby(value).schema_value
-      else
-        raise "value needs to be a hash, got #{value.class}"
-      end
+    def paths(prefix: '', value: {})
+      value.map do |key, json_value|
+        json_value.paths(prepend_path(prefix, key))
+      end.flatten
     end
 
     def get_swagger_lines(key, depth, value, references)

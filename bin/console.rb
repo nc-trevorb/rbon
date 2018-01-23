@@ -12,12 +12,7 @@ end
 
 reload
 
-ui = JsonToSchema.read_into_hash('appserver_response')
-response = JsonToSchema.read_into_hash('advice_map_responses')
-request = JsonToSchema.read_into_hash('advice_map_requests')
-
-ui_swag = Convert.json_to_swag(ui, 'ui')
-request_swag = Convert.json_to_swag(request, 'request')
-response_swag = Convert.json_to_swag(response, 'response')
+json = JsonToSchema.read_into_hash('appserver_response')
+schema = Convert.json_to_schema(json)
 
 binding.pry

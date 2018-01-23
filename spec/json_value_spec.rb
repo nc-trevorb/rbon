@@ -1,18 +1,15 @@
 require 'spec_helper'
 
 describe JsonValue do
-  type_to_value = {
-    JsonNull => nil,
+  {
     JsonBool => false,
     JsonNumber => 3,
     JsonString => 'asdf',
     JsonObject => {},
     JsonArray => [],
-  }
-
-  describe 'to_json_schema' do
-    type_to_value.each do |json_type, value|
-      context "for a #{json_type}" do
+  }.each do |json_type, value|
+    context "for any type (#{json_type})" do
+      describe '#to_json_schema' do
         let(:json_schema) { JsonValue.new(value).to_json_schema }
 
         it "should always return a HashWithIndifferentAccess with a 'type' key" do
@@ -22,135 +19,135 @@ describe JsonValue do
           expect(json_schema[:type]).to eq(json_type.schema_type)
         end
       end
-    end
 
-    {
-      JsonNull => nil,
-      JsonBool => false,
-      JsonNumber => 3,
-      JsonString => 'asdf',
-    }.each do |type, value|
-      context "for value types" do
-        let(:json_schema) { JsonValue.new(value).to_json_schema }
+      describe '#schema_type' do
+        let(:schema_type) { JsonValue.new(value).schema_type }
 
-        it "should not have properties" do # FIXME probably won't always be true
-          expect(json_schema[:properties]).to be(nil)
+        it "should always be a string" do
+          expect(schema_type).to be_a(String)
         end
       end
     end
+  end
 
-    context "for JsonArray types" do
+  {
+    JsonBool => false,
+    JsonNumber => 3,
+    JsonString => 'asdf',
+  }.each do |json_type, value|
+    context "for value types (#{json_type})" do
+      describe '#to_json_schema' do
+        let(:json_schema) { JsonValue.new(value).to_json_schema }
+
+        it "should not have any other properties" do
+          expect(json_schema.keys).to eq(['type'])
+        end
+      end
+
+      describe '#paths' do
+        let(:prefix) { 'prefix' }
+        let(:paths) { JsonValue.new(value).paths(prefix) }
+
+        it "should be a single path with the prefix" do
+          expect(paths.length).to eq(1)
+          expect(paths.first).to eq("#{prefix}:#{json_type.schema_type}")
+        end
+      end
+    end
+  end
+
+  context "for JsonArray types" do
+    describe '#to_json_schema' do
       let(:json_schema) { JsonValue.new([1,2,3]).to_json_schema }
 
       it "should have items" do
         expect(json_schema[:items]).not_to be(nil)
       end
+
+      it "should get the schemas of elements in the array" do
+        expect(json_schema[:items]).to include({ type: JsonNumber.schema_type })
+      end
     end
 
-    context "for JsonObject types" do
+    describe '#paths' do
+      [
+        [1,2,3],
+        ['asdf'],
+      ].each do |value|
+        context "nested primitives (#{value})" do
+          let(:json_value) { JsonValue.new(value) }
+
+          it "should use square brackets" do
+            paths = json_value.paths('prefix')
+            type = JsonValue.new(value.first).schema_type
+
+            expect(paths).to include("prefix[]:#{type}")
+          end
+        end
+      end
+
+      [
+        [[{ a: 1 }], 'number'],
+        [[{ a: [{ b: 'asdf' }] }], 'string'],
+      ].each do |value, type|
+        context "nested objects (#{value})" do
+          let(:json_value) { JsonValue.new(value) }
+
+          it "should use square brackets" do
+            path = json_value.paths('prefix').first
+
+            expect(path.start_with?("prefix[]/a")).to be(true)
+            expect(path.end_with?(":#{type}")).to be(true)
+          end
+        end
+      end
+    end
+  end
+
+  context "for JsonObject types" do
+    describe '#to_json_schema' do
       let(:json_schema) { JsonValue.new({ a: 1 }).to_json_schema }
 
       it "should have properties" do
-        expect(json_schema[:properties]).not_to be(nil)
+        nested_schema = json_schema[:properties][:a]
+
+        expect(nested_schema[:type]).to eq(JsonNumber.schema_type)
+      end
+
+      it "should build nested properties" do
+        json_schema = JsonValue.new({ a: { b: 'hi' }}).to_json_schema
+        nested_schema = json_schema[:properties][:a]
+        deep_nested_schema = nested_schema[:properties][:b]
+
+        expect(nested_schema[:type]).to eq(JsonObject.schema_type)
+        expect(deep_nested_schema[:type]).to eq(JsonString.schema_type)
+      end
+    end
+
+
+    describe '#paths' do
+      [
+        [{ a: 1 }, ["prefix/a:number"]],
+        [{ a: 1, b: 'asdf' }, ["prefix/a:number", "prefix/b:string"]],
+        [{ a: { b: 'asdf' } }, ["prefix/a/b:string"]],
+        [{ a: [{ b: [1, 'asdf'] }] }, ["prefix/a[]/b[]:string"]],
+      ].each do |value, expected_paths|
+        it "should list every path" do
+          json_value = JsonValue.new(value)
+          paths = json_value.paths('prefix')
+
+          expected_paths.each do |path|
+            expect(paths).to include(path)
+          end
+        end
       end
     end
   end
 
-  describe 'creating from raw values' do
-    type_to_value.each do |json_type, value|
-      it "should infer the type for #{value} as #{json_type}" do
-        json_value = JsonValue.new(value)
-        expect(json_value.type).to eq(json_type)
-      end
-    end
-
-    it 'should not recurse into objects' do
-      arg = { a: 'asdf' }.with_indifferent_access
-      expect(JsonValue.new(arg).value).to eq(arg)
-    end
-  end
-
-  describe "building values" do
+  describe "creation" do
     it "should recurse into objects to create more JsonValues" do
       arg = { a: 'asdf' }.with_indifferent_access
-      expect(JsonValue.build(arg).value.values.first).to be_a(JsonValue)
-    end
-  end
-
-  describe "JsonValue#schema_value" do
-    describe "should convert raw primitives to schema types" do
-      [
-        [JsonString, 'asdf', 'string'],
-        [JsonNumber, 5, 'number'],
-      ].each do |json_type, raw, expected_schema_value|
-        it "should convert a #{json_type} to '#{expected_schema_value}'" do
-          json_value = JsonValue.new(raw)
-
-          expect(json_value.type).to eq(json_type)
-          expect(json_value.schema_value).to eq(expected_schema_value)
-        end
-      end
-    end
-
-    describe "should parse an array into alphabetized types" do
-      {
-        'for an empty array' =>
-          [[], []],
-
-        'for an array with numbers' =>
-          [[1, 2], ['number']],
-
-        'for an array with strings' =>
-          [['asdf', 'jkl'], ['string']],
-
-        'for an array with mixed types' =>
-          [[1, 'jkl'], ['number','string']],
-
-        'for an array with mixed types in the other order' =>
-          [['jkl', 1], ['number','string']],
-
-        'for nested arrays' =>
-          [[['asdf'], [1]], [['number'],['string']]],
-
-        'for arrays with objects' =>
-          [[{ a: 1 }], [{'a' => 'number'}]],
-
-        'for arrays with multiple objects' =>
-          [[{ a: 1 }, { b: 'asdf' }], [{'a' => 'number'}, {'b' => 'string' }]],
-      }.each do |should, (raw, expected_schema_value)|
-        it should do
-          expect(JsonValue.build(raw).schema_value).to eq(expected_schema_value)
-        end
-      end
-    end
-
-    describe "should convert a top-level object to a hash" do
-      {
-        'for an empty object' =>
-          [{}, {}],
-
-        'for an object with a primitive value' =>
-          [{ a: 1 }, { a: 'number' }],
-
-        'for an object with an array value' =>
-          [{ a: ['asdf'] }, { a: ['string'] }],
-
-        'for nested objects' =>
-          [{ a: { b: 'asdf' }}, { a: { b: 'string' }}],
-
-        'should handle nested objects in arrays' =>
-          [{ a: [{ b: 'asdf' }, { c: 1 }]}, { a: [{ b: 'string' }, { c: 'number' }] }],
-
-        'should handle deeply-nested objects' =>
-          [{ a: { b: { c: 'asdf' }}}, { a: { b: { c: 'string' }}}],
-
-        'should handle any object' =>
-          [{ a: { b: 'asdf', c: 1 }}, { a: { b: 'string', c: 'number' }}],
-      }.each do |should, (raw, expected_schema_value)|
-        it should do
-          expect(JsonValue.build(raw).schema_value).to eq(expected_schema_value.with_indifferent_access)
-        end
-      end
+      expect(JsonValue.new(arg).value.values.first).to be_a(JsonValue)
     end
   end
 end
