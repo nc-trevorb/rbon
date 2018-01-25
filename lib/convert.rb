@@ -14,12 +14,17 @@ class Convert
       json
     end
 
+    def jsons_to_schema(input_jsons)
+      schemas = input_jsons.map(&method(:json_to_schema))
+      Combine.list_of_schemas(*schemas)
+    end
+
     def json_to_schema(input_json)
       if input_json.is_a?(Hash)
         json = get_json(input_json)
         json_ruby = json_to_json_ruby(json)
 
-        json_ruby_to_json_schema(json_ruby)
+        json_ruby.to_json_schema
       else
         JsonValue.new(input_json).to_json_schema
       end
@@ -47,6 +52,30 @@ class Convert
       JsonValue.new(json)
     end
 
+    def json_schema_to_json_ruby(json_schema)
+      schema = json_schema.indifferent
+
+      json_type = JsonValue::TYPES.find do |jt|
+        jt.schema_type == schema[:type].to_s
+      end
+
+      json_value = if json_type == JsonObject
+                     val = {}
+
+                     schema[:properties].each do |k, v|
+                       val[k] = json_schema_to_json_ruby(v).type.default
+                     end
+
+                     val
+                   elsif json_type == JsonArray
+                     [json_schema_to_json_ruby(schema[:items]).type.default]
+                   else
+                     json_type.default
+                   end
+
+      JsonValue.new(json_value)
+    end
+
     def json_ruby_to_paths(json_ruby, prefix: '')
       raise "need to pass in JsonObject" unless json_ruby.type == JsonObject
       paths = []
@@ -56,36 +85,6 @@ class Convert
       end
 
       paths
-    end
-
-    def json_ruby_to_json_schema(json_ruby)
-      raise "need to pass in JsonObject" unless json_ruby.type == JsonObject
-      schema = { type: JsonObject.schema_type, properties: {} }
-
-      json_ruby.value.each do |k, v|
-        schema[:properties][k] = if v.type == JsonObject
-                                   json_ruby_to_json_schema(v)
-                                 elsif v.type == JsonArray
-                                   schemas = if v.value.any? { |v_| v_.type == JsonObject }
-                                               v.value.map(&method(:json_ruby_to_json_schema))
-                                             else
-                                               v.value.map(&:to_json_schema)
-                                             end.uniq
-
-                                   items_value = if schemas.length == 1
-                                                   schemas.first
-                                                 else
-                                                   Combine.list_of_schemas(*schemas.uniq)
-                                                 end
-
-
-                                   { type: 'array', items: items_value }
-                                 else
-                                   v.to_json_schema
-                                 end
-      end
-
-      schema.indifferent
     end
   end
 end

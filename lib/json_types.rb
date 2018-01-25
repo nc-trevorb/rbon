@@ -152,19 +152,15 @@ class JsonArray < JsonType
     end
 
     def other_schema_fields(value: nil)
-      item_types = value.map(&:to_json_schema).uniq
+      schemas = value.map(&:to_json_schema).uniq
 
-      if item_types.length == 0
-        { items: {} }
-      elsif item_types.length == 1
-        { items: item_types.first }
-      else
-        if all_simple_schemas?(item_types)
-          { items: { type: item_types.map{|x| x[:type]}.sort }}
-        else
-          raise "complex conflict"
-        end
-      end.with_indifferent_access
+      items_value = if schemas.length == 1
+                      schemas.first
+                    else
+                      Combine.list_of_schemas(*schemas.uniq)
+                    end
+
+      { items: items_value }.indifferent
     end
 
     def all_simple_schemas?(schemas)
@@ -216,7 +212,7 @@ class JsonObject < JsonType
         properties_types[k] = v.to_json_schema
       end
 
-      { properties: properties_types }.with_indifferent_access
+      { properties: properties_types }.indifferent
     end
 
     def paths(prefix: '', value: {})

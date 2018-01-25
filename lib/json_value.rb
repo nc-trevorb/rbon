@@ -48,7 +48,7 @@ class JsonValue
                { type: type.schema_type }
              end
 
-    schema.merge(type.other_schema_fields(value: value)).with_indifferent_access
+    schema.merge(type.other_schema_fields(value: value)).indifferent
   end
 
   def schema_type
@@ -65,6 +65,10 @@ class JsonValue
     lines.map do |l|
       l.prepend(depth)
     end.join("\n")
+  end
+
+  def ==(other)
+    self.type == other.type && self.value == other.value
   end
 
   def <=>(other)

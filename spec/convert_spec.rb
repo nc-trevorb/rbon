@@ -14,7 +14,7 @@ describe Convert do
     }
   end
   let(:json_ruby) { convert.json_to_json_ruby(json) }
-  let(:json_schema) { convert.json_ruby_to_json_schema(json_ruby) }
+  let(:json_schema) { json_ruby.to_json_schema }
   let(:json_paths) { convert.json_schema_to_json_paths(json_schema) }
 
   describe "#json_to_json_ruby" do
@@ -53,62 +53,106 @@ describe Convert do
     end
   end
 
-  describe "#json_ruby_to_json_schema" do
-    it "should only accept a JsonObject argument" do
-      [1, 'asdf', []].each do |value|
-        input = JsonValue.new(value)
-        expect { convert.json_ruby_to_json_schema(input) }.to raise_error(RuntimeError)
+  # FIXME probably doesn't belong in Convert specs
+  describe "json_ruby.to_json_schema" do
+    context "for non-JsonObjects" do
+      it "should build the schema" do
+        json.keys.each do |key|
+          jr = json_ruby.value[key]
+          js = json_schema[:properties][key]
+          converted = jr.to_json_schema
+
+          expect(converted).to eq(js)
+        end
       end
     end
 
-    it "indifferentiates hashes" do
-      json.keys.each do |key|
-        expect(json_schema[key]).to eq(json_schema[key.to_s])
-      end
-    end
-
-    it "should convert JsonValues to a json schema" do
-      expect(json_schema).to be_a(Hash)
-      expect(json_schema[:properties][:k_string][:type]).to eq('string')
-      expect(json_schema[:properties][:k_number][:type]).to eq('number')
-
-      array = json_schema[:properties][:k_array_of_numbers]
-      expect(array[:type]).to eq('array')
-      expect(array[:items][:type]).to eq('number')
-
-      object = json_schema[:properties][:k_object]
-      expect(object[:type]).to eq('object')
-      expect(object[:properties][:string_in_object][:type]).to eq('string')
-
-      array_of_objects = json_schema[:properties][:k_array_of_objects]
-      expect(array_of_objects[:type]).to eq('array')
-
-      object_in_array = array_of_objects[:items]
-      expect(object_in_array[:type]).to eq('object')
-      expect(object_in_array[:properties][:string_in_object_in_array][:type]).to eq('string')
-    end
-
-    context 'heterogenous arrays' do
-      it 'merges compatible schemas into one' do
-        json = { a: [{ b: 5 }, { c: 'asdf' }]}
-        json_ruby = convert.json_to_json_ruby(json)
-        json_schema = convert.json_ruby_to_json_schema(json_ruby)
-
-        expect(json_schema[:properties][:a][:type]).to eq('array')
-        expect(json_schema[:properties][:a][:items][:type]).to eq('object')
-        expect(json_schema[:properties][:a][:items][:properties][:b][:type]).to eq('number')
-        expect(json_schema[:properties][:a][:items][:properties][:c][:type]).to eq('string')
+    context "for JsonObjects" do
+      it "indifferentiates hashes" do
+        json.keys.each do |key|
+          expect(json_schema[key]).to eq(json_schema[key.to_s])
+        end
       end
 
-      it 'lists incompatible objects as alternatives' do
-        json = { a: [{ b: 5 }, { b: 'asdf' }]}
-        json_ruby = convert.json_to_json_ruby(json)
-        json_schema = convert.json_ruby_to_json_schema(json_ruby)
+      it "should convert JsonValues to a json schema" do
+        expect(json_schema).to be_a(Hash)
+        expect(json_schema[:properties][:k_string][:type]).to eq('string')
+        expect(json_schema[:properties][:k_number][:type]).to eq('number')
 
-        expect(json_schema[:properties][:a][:type]).to eq('array')
-        expect(json_schema[:properties][:a][:items][:type]).to eq('object')
-        expect(json_schema[:properties][:a][:items][:properties][:b][:type]).to include('number')
-        expect(json_schema[:properties][:a][:items][:properties][:b][:type]).to include('string')
+        array = json_schema[:properties][:k_array_of_numbers]
+        expect(array[:type]).to eq('array')
+        expect(array[:items][:type]).to eq('number')
+
+        object = json_schema[:properties][:k_object]
+        expect(object[:type]).to eq('object')
+        expect(object[:properties][:string_in_object][:type]).to eq('string')
+
+        array_of_objects = json_schema[:properties][:k_array_of_objects]
+        expect(array_of_objects[:type]).to eq('array')
+
+        object_in_array = array_of_objects[:items]
+        expect(object_in_array[:type]).to eq('object')
+        expect(object_in_array[:properties][:string_in_object_in_array][:type]).to eq('string')
+      end
+
+      context 'heterogenous arrays' do
+        it 'merges compatible schemas into one' do
+          json = { a: [{ b: 5 }, { c: 'asdf' }]}
+          json_ruby = convert.json_to_json_ruby(json)
+          json_schema = json_ruby.to_json_schema
+
+          expect(json_schema[:properties][:a][:type]).to eq('array')
+          expect(json_schema[:properties][:a][:items][:type]).to eq('object')
+          expect(json_schema[:properties][:a][:items][:properties][:b][:type]).to eq('number')
+          expect(json_schema[:properties][:a][:items][:properties][:c][:type]).to eq('string')
+        end
+
+        it 'lists incompatible objects as alternatives' do
+          json = { a: [{ b: 5 }, { b: 'asdf' }]}
+          json_ruby = convert.json_to_json_ruby(json)
+          json_schema = json_ruby.to_json_schema
+
+          expect(json_schema[:properties][:a][:type]).to eq('array')
+          expect(json_schema[:properties][:a][:items][:type]).to eq('object')
+          expect(json_schema[:properties][:a][:items][:properties][:b][:type]).to include('number')
+          expect(json_schema[:properties][:a][:items][:properties][:b][:type]).to include('string')
+        end
+      end
+    end
+  end
+
+  describe '#json_schema_to_json_ruby' do
+    context "building JsonValues" do
+      context "for simple schemas" do
+        [
+          [{ type: 'string' }, JsonString],
+          [{ type: 'number' }, JsonNumber],
+          [{ type: 'boolean' }, JsonBool],
+          [{}, JsonNull],
+        ].each do |schema, json_type|
+          it "should use the default value (#{json_type})" do
+            jr = convert.json_schema_to_json_ruby(schema.indifferent)
+
+            expect(jr).to be_a(JsonValue)
+            expect(jr.type).to eq(json_type)
+            expect(jr.value).to eq(json_type.default)
+          end
+        end
+      end
+
+      context "for complex schemas" do
+        # FIXME these inputs only work because they use .default, would be nice to not have to do that
+        [
+          [{ type: 'array', items: { type: 'number' } }, [JsonNumber.default]],
+          [{ type: 'object', properties: { a: { type: 'number' }, b: { type: 'string' }}}, { a: JsonNumber.default, b: JsonString.default }],
+        ].each do |schema, raw|
+          it 'should populate the other schema fields' do
+            expected = JsonValue.new(raw)
+            converted = convert.json_schema_to_json_ruby(schema.indifferent)
+
+            expect(converted).to eq(expected)
+          end
+        end
       end
     end
   end

@@ -12,7 +12,6 @@ end
 
 reload
 
-json = JsonToSchema.read_into_hash('appserver_response')
-schema = Convert.json_to_schema(json)
+schema = JsonToSchema.aggregate_schema('AppServerForecastResponse', write: false)
 
 binding.pry

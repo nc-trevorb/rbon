@@ -22,9 +22,11 @@ class Combine
   end
 
   def list_of_schemas(*schemas)
-    merged = deep_dup(schemas.flatten.first)
+    head = schemas.first
+    tail = schemas.drop(1)
+    merged = deep_dup(head)
 
-    schemas.flatten.drop(1).each_with_index do |schema, schema_index|
+    tail.each_with_index do |schema, schema_index|
       merged = two_schemas(merged, schema, i: schema_index)
     end
 
@@ -32,13 +34,20 @@ class Combine
   end
 
   def two_schemas(schema_a, schema_b, i: 0)
-    merged = deep_dup(schema_a)
+    # FIXME maybe shouldn't fix nils here
+    if schema_a.nil?
+      schema_b
+    elsif schema_b.nil?
+      schema_a
+    else
+      merged = deep_dup(schema_a)
 
-    schema_b.each do |k, v|
-      merged = add_to_schema(merged, k, v)
+      schema_b.each do |k, v|
+        merged = add_to_schema(merged, k, v)
+      end
+
+      merged
     end
-
-    merged
   end
 
   def add_to_schema(schema, k, v)
@@ -62,15 +71,25 @@ class Combine
     when :aggregate
       case k
       when 'type'
-        new_schema[k] = if schema[k].is_a?(Array)
-                          schema[k] << v
-                        else
-                          [schema[k], v]
-                        end.sort
+        types = if schema[k].is_a?(Array)
+                  schema[k] << v
+                else
+                  [schema[k], v]
+                end.compact
+
+        new_type = if types.uniq.length == 1
+                     types.first
+                   else
+                     # binding.pry if types.length != types.compact.length
+                     types.uniq.sort
+                   end
+
+        new_schema[k] = new_type
       when 'items'
         begin
+          # FIXME should this be add_to_schema?
           new_schema[k] = resolve_conflict(schema[k], 'type', v['type'])
-        rescue
+        rescue => e
           binding.pry
         end
       when 'properties'
@@ -106,7 +125,7 @@ class Combine
   end
 
   def deep_dup(hash)
-    Marshal.load(Marshal.dump(hash))
+    Marshal.load(Marshal.dump(hash)) || {}
   end
 
 end

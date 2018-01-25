@@ -14,16 +14,48 @@ end
 
 module JsonToSchema
   class << self
-    def write_swag(json)
+    def aggregate(dir)
+      files = `ls #{dir}`.split
+      raise "need some jsons" if files.empty?
+
+      jsons = files.map do |f|
+        # FIXME shouldn't need this gsub here
+        eval(File.read("#{dir}/#{f}").gsub('null', 'nil'))
+      end.uniq
     end
 
-    def read_into_hash(filename)
-      eval(File.read("./data/#{filename}"))
+    # def aggregate_schema(type, write: false)
+    # end
+
+    def aggregate_schema(type, write: false)
+      in_dir, out_dir = get_dirs(type)
+      jsons = aggregate(in_dir)
+      schema = Convert.jsons_to_schema(jsons)
+
+      if write
+        path = "#{out_dir}/schema-#{Time.current.strftime('%s%2N')}.json"
+        File.write(path, JSON.pretty_generate(schema))
+      end
+
+      schema
     end
 
-    def read_into_schema(filename)
-      json = eval(File.read("./data/#{filename}"))
-      Convert.json_to_schema(json)
+    def aggregate_paths(type)
+      dir = in_dir(type)
+      jsons = aggregate(dir)
+      Convert.jsons_to_paths(jsons)
+    end
+
+    def get_dirs(type)
+      # FIXME won't work for other people
+      dirs = [
+        "/Users/trevorb/code/json_to_schema/data/in/#{type}",
+        "/Users/trevorb/code/json_to_schema/data/out/#{type}",
+      ]
+
+      dirs.each do |dir|
+        Dir.mkdir(dir) unless Dir.exists?(dir)
+      end
     end
   end
 end
