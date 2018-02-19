@@ -16,7 +16,7 @@ class Compare
         path_with_same_key = p2.find { |p| p.start_with?("#{key}:") }
         value_with_same_key = try_value(path_with_same_key, ':')
 
-        if value == JsonNull.schema_type && path_with_same_key
+        if value == RbonNull.schema_type && path_with_same_key
           diff[:same] << path_with_same_key
         else
           if path_with_same_key
@@ -46,7 +46,7 @@ class Compare
       paths1 = Convert.json_to_paths(j1)
       paths2 = Convert.json_to_paths(j2)
 
-      json_differences(paths1, paths2).with_indifferent_access
+      json_differences(paths1, paths2).indifferent
     end
 
     private

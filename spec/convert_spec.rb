@@ -1,7 +1,6 @@
 require 'spec_helper'
 
 describe Convert do
-  let(:convert) { described_class }
   let(:json) do
     {
       k_string: 'hi',
@@ -13,52 +12,63 @@ describe Convert do
       k_array_of_objects: [{ string_in_object_in_array: 'blah' }],
     }
   end
-  let(:json_ruby) { convert.json_to_json_ruby(json) }
-  let(:json_schema) { json_ruby.to_json_schema }
+  let(:rbon) { convert.json_to_rbon(json) }
+  let(:json_schema) { rbon.to_json_schema }
   let(:json_paths) { convert.json_schema_to_json_paths(json_schema) }
 
-  describe "#json_to_json_ruby" do
+  let(:convert) { described_class }
+
+  context "hashes with integer keys (e.g. allocations)" do
+    it "compacts them with a key of '<id>'" do
+      skip "add specs for custom names"
+      paths = convert.json_to_paths({ a: { '30' => 2, '31' => 6 }})
+      expect(paths).to include('a/<id>:number')
+    end
+  end
+
+  describe "#json_to_rbon" do
     def assert_json_type(jr, type)
-      expect(jr).to be_a(JsonValue)
-      expect(jr.type).to eq(type)
+      expect(jr).to be_a(RbonValue)
+      expect(jr.class).to eq(type)
     end
 
-    it "should only accept a hash argument" do
-      [1, 'asdf', []].each do |input|
-        expect { convert.json_to_json_ruby(input) }.to raise_error(RuntimeError)
+    it "should build primitive rbon values" do
+      RbonPrimitive.descendants.each do |type|
+        rbon = convert.json_to_rbon(type.default)
+        expect(rbon.class).to eq(type)
       end
     end
 
-    it "should convert a hash to a JsonValue" do
-      assert_json_type(json_ruby, JsonObject)
+    it "should build collection rbon values" do
+      assert_json_type(rbon, RbonObject)
     end
 
-    it "should convert values to JsonValues" do
-      assert_json_type(json_ruby.value[:k_string], JsonString)
-      assert_json_type(json_ruby.value[:k_number], JsonNumber)
-      assert_json_type(json_ruby.value[:k_array_of_numbers], JsonArray)
-      assert_json_type(json_ruby.value[:k_object], JsonObject)
+    it "should convert values to RbonValues" do
+      assert_json_type(rbon.value[:k_string], RbonString)
+      assert_json_type(rbon.value[:k_number], RbonNumber)
+      assert_json_type(rbon.value[:k_array_of_numbers], RbonArray)
+      assert_json_type(rbon.value[:k_object], RbonObject)
     end
 
     context "recursing into objects" do
       it 'recurses into arrays' do
-        assert_json_type(json_ruby.value[:k_array_of_objects], JsonArray)
-        assert_json_type(json_ruby.value[:k_array_of_objects].value.first, JsonObject)
-        assert_json_type(json_ruby.value[:k_array_of_objects].value.first.value[:string_in_object_in_array], JsonString)
+        assert_json_type(rbon.value[:k_array_of_objects], RbonArray)
+        assert_json_type(rbon.value[:k_array_of_objects].value.first, RbonObject)
+        assert_json_type(rbon.value[:k_array_of_objects].value.first.value[:string_in_object_in_array], RbonString)
       end
 
       it 'recurses into objects' do
-        assert_json_type(json_ruby.value[:k_object].value[:string_in_object], JsonString)
+        assert_json_type(rbon.value[:k_object].value[:string_in_object], RbonString)
       end
     end
   end
 
   # FIXME probably doesn't belong in Convert specs
-  describe "json_ruby.to_json_schema" do
-    context "for non-JsonObjects" do
+  describe "rbon.to_json_schema" do
+    context "for non-RbonObjects" do
       it "should build the schema" do
         json.keys.each do |key|
-          jr = json_ruby.value[key]
+          jr = rbon.value[key]
           js = json_schema[:properties][key]
           converted = jr.to_json_schema
 
@@ -67,14 +77,14 @@ describe Convert do
       end
     end
 
-    context "for JsonObjects" do
+    context "for RbonObjects" do
       it "indifferentiates hashes" do
         json.keys.each do |key|
           expect(json_schema[key]).to eq(json_schema[key.to_s])
         end
       end
 
-      it "should convert JsonValues to a json schema" do
+      it "should convert RbonValues to a json schema" do
         expect(json_schema).to be_a(Hash)
         expect(json_schema[:properties][:k_string][:type]).to eq('string')
         expect(json_schema[:properties][:k_number][:type]).to eq('number')
@@ -98,8 +108,8 @@ describe Convert do
       context 'heterogenous arrays' do
         it 'merges compatible schemas into one' do
           json = { a: [{ b: 5 }, { c: 'asdf' }]}
-          json_ruby = convert.json_to_json_ruby(json)
-          json_schema = json_ruby.to_json_schema
+          rbon = convert.json_to_rbon(json)
+          json_schema = rbon.to_json_schema
 
           expect(json_schema[:properties][:a][:type]).to eq('array')
           expect(json_schema[:properties][:a][:items][:type]).to eq('object')
@@ -109,8 +119,8 @@ describe Convert do
 
         it 'lists incompatible objects as alternatives' do
           json = { a: [{ b: 5 }, { b: 'asdf' }]}
-          json_ruby = convert.json_to_json_ruby(json)
-          json_schema = json_ruby.to_json_schema
+          rbon = convert.json_to_rbon(json)
+          json_schema = rbon.to_json_schema
 
           expect(json_schema[:properties][:a][:type]).to eq('array')
           expect(json_schema[:properties][:a][:items][:type]).to eq('object')
@@ -121,20 +131,20 @@ describe Convert do
     end
   end
 
-  describe '#json_schema_to_json_ruby' do
-    context "building JsonValues" do
+  xdescribe '#json_schema_to_rbon' do
+    context "building RbonValues" do
       context "for simple schemas" do
         [
-          [{ type: 'string' }, JsonString],
-          [{ type: 'number' }, JsonNumber],
-          [{ type: 'boolean' }, JsonBool],
-          [{}, JsonNull],
+          [{ type: 'string' }, RbonString],
+          [{ type: 'number' }, RbonNumber],
+          [{ type: 'boolean' }, RbonBool],
+          [{}, RbonNull],
         ].each do |schema, json_type|
           it "should use the default value (#{json_type})" do
-            jr = convert.json_schema_to_json_ruby(schema.indifferent)
+            jr = convert.json_schema_to_rbon(schema.indifferent)
 
-            expect(jr).to be_a(JsonValue)
-            expect(jr.type).to eq(json_type)
+            expect(jr).to be_a(RbonValue)
+            expect(jr.class).to eq(json_type)
             expect(jr.value).to eq(json_type.default)
           end
         end
@@ -143,12 +153,12 @@ describe Convert do
       context "for complex schemas" do
         # FIXME these inputs only work because they use .default, would be nice to not have to do that
         [
-          [{ type: 'array', items: { type: 'number' } }, [JsonNumber.default]],
-          [{ type: 'object', properties: { a: { type: 'number' }, b: { type: 'string' }}}, { a: JsonNumber.default, b: JsonString.default }],
+          [{ type: 'array', items: { type: 'number' } }, [RbonNumber.default]],
+          [{ type: 'object', properties: { a: { type: 'number' }, b: { type: 'string' }}}, { a: RbonNumber.default, b: RbonString.default }],
         ].each do |schema, raw|
           it 'should populate the other schema fields' do
-            expected = JsonValue.new(raw)
-            converted = convert.json_schema_to_json_ruby(schema.indifferent)
+            expected = RbonValue.create(raw)
+            converted = convert.json_schema_to_rbon(schema.indifferent)
 
             expect(converted).to eq(expected)
           end
@@ -157,7 +167,7 @@ describe Convert do
     end
   end
 
-  describe "#json_ruby_to_json_paths" do
+  describe "#rbon_to_json_paths" do
     def expect_paths(json, path)
       json_paths = convert.json_to_paths(json)
       expect(json_paths).to include(path)
@@ -215,13 +225,6 @@ describe Convert do
             d: 2,
           }
         }
-      end
-
-      context "hashes with integer keys (e.g. allocations)" do
-        it "compacts them with a key of '<id>'" do
-          paths = convert.json_to_paths({ a: { '30' => 2, '31' => 6 }})
-          expect(paths).to include('a/<id>:number')
-        end
       end
     end
   end

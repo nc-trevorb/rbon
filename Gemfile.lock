@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    json_to_schema (0.0.1)
+    rbon (0.0.1)
       activesupport
 
 GEM
@@ -12,16 +12,21 @@ GEM
       i18n (~> 0.7)
       minitest (~> 5.1)
       tzinfo (~> 1.1)
+    addressable (2.5.2)
+      public_suffix (>= 2.0.2, < 4.0)
     coderay (1.1.2)
     concurrent-ruby (1.0.5)
     diff-lcs (1.3)
     i18n (0.9.1)
       concurrent-ruby (~> 1.0)
+    json-schema (2.8.0)
+      addressable (>= 2.4)
     method_source (0.9.0)
     minitest (5.10.3)
     pry (0.11.3)
       coderay (~> 1.1.0)
       method_source (~> 0.9.0)
+    public_suffix (3.0.1)
     rspec (3.7.0)
       rspec-core (~> 3.7.0)
       rspec-expectations (~> 3.7.0)
@@ -44,9 +49,10 @@ PLATFORMS
 
 DEPENDENCIES
   bundler
-  json_to_schema!
+  json-schema
   pry
+  rbon!
   rspec
 
 BUNDLED WITH
-   1.16.0
+   1.16.1

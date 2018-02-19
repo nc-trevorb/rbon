@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+
+begin
+  load './lib/rbon.rb'
+rescue LoadError
+  raise LoadError.new("couldn't find './lib/rbon.rb', try running bin/repl from project root")
+end
+
+binding.pry

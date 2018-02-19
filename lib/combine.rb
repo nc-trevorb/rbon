@@ -80,7 +80,6 @@ class Combine
         new_type = if types.uniq.length == 1
                      types.first
                    else
-                     # binding.pry if types.length != types.compact.length
                      types.uniq.sort
                    end
 
@@ -102,7 +101,7 @@ class Combine
         raise "not sure what to do for #{k}"
       end
     when :raise_error
-      raise "rose an error"
+      raise "found a conflict: \nschema: #{schema}\nk: #{k}\nv: #{v}"
     else
       raise "invalid strategy: #{conflict_strategy}"
     end
